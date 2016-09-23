@@ -120,7 +120,7 @@ def collectData(): #FUNCTION USED TO COLLECT DATA
 
             #test if theta is greater than 90 or and acceleration is negative, if it is assume magnitude of acceleration
             #is negative
-            if theta > 90 and theta < 270:
+            if theta > 90 or theta < 270:
                 currentAccerlationInZDirection = -1*magnitudeOfAccelerationInZDirection
             else :
                 currentAccerlationInZDirection = magnitudeOfAccelerationInZDirection
