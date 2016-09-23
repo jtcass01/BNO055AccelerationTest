@@ -2,13 +2,18 @@
 import logging
 import sys
 import time
+import math
+import datetime
+import sys
+from os import system, remove
+import os
 #import Gnuplot #, Gnuplot.funcutils
 
 from Adafruit_BNO055 import BNO055
 
 
-#=============== SETUP ======================
-#=============== BNO055 SETUP ===============
+#=============== SETUP ===========================
+#=============== BNO055 SETUP ===================
 #Create and configure the BNO sensor connection.
 #Raspberry Pi configuration with serial UART and RST connected to GPIO 18:
 bno = BNO055.BNO055(serial_port='/dev/serial0', rst=18)
@@ -32,28 +37,51 @@ if status == 0x01:
     print('See datasheet section 4.3.59 for the meaning.')
 #=============== END BNO055 SETUP ===============
 
+
 #=============== FILE SETUP =====================
 
 #=============== END FILE SETUP =================
 
+
 #=============== VARIABLE SETUP =================
+NUM_OF_READINGS = 9
+
+#Zero the time
 programStartTime = int(round(time.time()*1000))
+
+#Create list for acceleration readings
+acceleration = [None] * NUM_OF_READINGS
+
+#Create list for altitude readings
+altitude = [None] * NUM_OF_READINGS
+
+#Create list for times
+times = [None] * NUM_OF_READINGS
+
+#fill time list with some initial readings
 #=============== END VARIABLE SETUP =============
-#=============== END SETUP ======================
+#=============== END SETUP =======================
 
 
 
-def storeData(whatFile, currentAccerlationInZDirection) #FUNCTION USED TO STORE DATA TO A FILE
-    whatFile.write('{0:02F}'.format(currentAccerlationInZDirection))
 
-def collectData #FUNCTION USED TO COLLECT DATA
-    dataFileString = 'sensorData{}.dat'.format(datatime.datatime.now().strftime("%y_%m_%d_%H_%M"))
+
+#=============== FUNCTIONS ======================
+def storeData(whatFile) : #FUNCTION USED TO STORE DATA TO A FILE
+    whatFile.write('{0} {1:02F}\n'.format(time[0],acceleration[0]))
+
+def collectData(): #FUNCTION USED TO COLLECT DATA
+    dataFileString = 'sensorData{}.dat'.format(datetime.datetime.now().strftime("%y_%m_%d_%H_%M"))
     dataFile = open(dataFileString, "w")
     tmpFile = open('tmpPlotCmd.gp', "w")
     print os.getcwd()
     tmpFile.write('plot %s/%s"'%(os.getcwd(), dataFileString))
-    tmp.close()
+    tmpFile.close()
 
+    #Variable for counting the number of readings taken
+    loopCount = 0
+
+    
     try:    
         while True:
             # Read the Euler angles for heading, roll, pitch(all in degrees).
@@ -69,8 +97,9 @@ def collectData #FUNCTION USED TO COLLECT DATA
             print('Current Linear Accelaration: x={0:0.2F} y={1:0.2F} z={2:0.2F}'.format(xa,ya,za))
             print('Current Accelaration due to gravity: x={0:0.2F} y={1:0.2F} z={2:0.2F}'.format(xg,yg,zg))
 
-            #calulation to find the gradient of linear acceleration onto the acceleration of gravity
             adotg = ((xa*xg)+(ya*yg)+(za*zg))
+            
+            #calulation to find the gradient of linear acceleration onto the acceleration of gravity
             gradient = (adotg/(((xg**2)+(yg**2)+(zg**2))**0.5))
 
             #Calculations to find each component of acceleration using the gradient of linear accerlation onto the accerlation of gravity
@@ -84,20 +113,33 @@ def collectData #FUNCTION USED TO COLLECT DATA
             print('Current Acceleration in the Z direction (vector): x={0:0.2F} y={1:0.2F} z={2:0.2F}'.format(xComponentOfAcceleration,yComponentOfAcceleration,zComponentOfAcceleration))
             print('Magnitude of acceleration in the Z Direction = {0:0.2F}'.format(magnitudeOfAccelerationInZDirection))
 
-            #test if a dot g is negative, assume theta is greater than 90 and acceleration is negative
-            if adotg < 0:
+            #Calculate theta using gradient -- cos(theta) = gradient
+            theta = math.acos(gradient)
+            #Convert theta into degrees
+            theta = (theta*180)/ math.pi
+
+            #test if theta is greater than 90 or and acceleration is negative, if it is assume magnitude of acceleration
+            #is negative
+            if theta > 90 and theta < 270:
                 currentAccerlationInZDirection = -1*magnitudeOfAccelerationInZDirection
             else :
                 currentAccerlationInZDirection = magnitudeOfAccelerationInZDirection
 
-            print('Current accerlation in the Z Direction = {0:0.2F}'.format(currentAccerlationInZDirection))
+            print('Current accerlation in the Z Direction = {0:0.2F} \n\n'.format(currentAccerlationInZDirection))
 
-            #FIND CURRENT TIME
-            currentTime = int(round(time.time() * 1000)) - programStartTime
+            #UPDATE TIME AND ACCELERATION LISTS
+            times.insert(0,int(round(time.time() * 1000)) - programStartTime)
+            acceleration.insert(0, currentAccerlationInZDirection)
+
+
+            if loopCount < (NUM_OF_READINGS+1): #If not enough readings, do nothing
+                loopCount += 1
+            else: #If NUM_OF_READINGS has been met, kick oldest reading out
+                times.pop()
+                acceleration.pop()
+                storeData(dataFile)
             
-            storeData(dataFile, currentAccerlationInZDirection)
-            
-            
+                        
             time.sleep(.5)
 
     except KeyboardInterrupt: #Hit ctrl + c to end loop
@@ -105,11 +147,14 @@ def collectData #FUNCTION USED TO COLLECT DATA
         system('gnuplot - persist tmpPlotCmd.gp')
         remove('tmpPlotCmd.gp')
         pass
+#=============== END FUNCTIONS ==================
 
-#===============MAIN FUNCTION===============
+
+
+#===============MAIN PROGRAM=====================
 while True:
     collectData()
-
+    sys.exit()
     #TODO!!!!! YOU NEED TO WRITE TO TWO FILES.  ONE FOR BMP100 READINGS AND ONE FOR CURRENT ACCELERATION !!!!
     #SEE VDS_Tronics_1_0.py AS A REFERENCE!!!
 
