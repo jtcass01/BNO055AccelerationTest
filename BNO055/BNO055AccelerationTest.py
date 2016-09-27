@@ -37,7 +37,7 @@ def storeData(whatFile, source) : #FUNCTION USED TO STORE DATA TO A FILE
     if (source == "BNO055"):
         whatFile.write('{0},{1},{2:02F}\n'.format(source,times[0],accelerationFromBNO[0]))
     else:
-        whatFile.write('{0},{1},{1:02F}\n'.format(source,times[0],altitudes[0]))
+        whatFile.write('{0},{1},{2:02F}\n'.format(source,times[0],altitudes[0]))
         
 def collectData(): #FUNCTION USED TO COLLECT DATA
     dataFileString = 'sensorData{}.dat'.format(datetime.datetime.now().strftime("%y_%m_%d_%H_%M"))
