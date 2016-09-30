@@ -33,6 +33,52 @@ def check_bmp180():
     print("Altitude (AGL) = {0:0.2F} m".format(bmp180.read_altitude()-pad_alt))
     print("Sealevel Pressure = {0:0.2F} Pa \n".format(bmp180.read_sealevel_pressure()))
 
+def calibrateBNO():
+    sys, gyro, accel, mag = bno.get_calibration_status()
+
+    print("Calibrating BNO055...")
+
+    while(accel < 3):
+          xa, ya, za = bno.read_linear_acceleration()
+          xg, yg, zg = bno.read_gravity()
+
+          adotg = ((xa*xg)+(ya*yg)+(za*zg))
+            
+          #calulation to find the gradient of linear acceleration onto the acceleration of gravity
+          gradient = adotg/(((xg**2)+(yg**2)+(zg**2)))
+
+          #Calculations to find each component of acceleration using the gradient of linear accerlation onto the accerlation of gravity
+          xComponentOfAcceleration = gradient*xg
+          yComponentOfAcceleration = gradient*yg
+          zComponentOfAcceleration = gradient*zg
+
+          #Final calculation finding the magnitude of accerlation in the direction of gravity (e.g. the upwards
+          #linear accerlation regardless of orientation of the sensor.)
+          magnitudeOfAccelerationInZDirection = (((xComponentOfAcceleration**2)+(yComponentOfAcceleration**2)+(zComponentOfAcceleration**2))**0.5)
+
+          #Calculate theta using gradient -- cos(theta) = gradient
+          theta = math.acos(gradient)
+          #Convert theta into degrees
+          theta = (theta*180)/ math.pi
+
+          #test if theta is greater than 90 or and acceleration is negative, if it is assume magnitude of acceleration
+          #is negative
+          if theta > 90 and theta < 270:
+              currentAccerlationInZDirection = -1*magnitudeOfAccelerationInZDirection
+          else :
+              currentAccerlationInZDirection = magnitudeOfAccelerationInZDirection
+
+          print('Sys_cal={0} Gyro_cal={1} Accel_cal={2} Mag_cal={3}'.format(sys, gyro, accel, mag))
+          print('Current Linear Accelaration: x={0:0.2F} y={1:0.2F} z={2:0.2F}'.format(xa,ya,za))
+          print('Current Accelaration due to gravity: x={0:0.2F} y={1:0.2F} z={2:0.2F}'.format(xg,yg,zg))
+          print('Current accerlation in the Z Direction = {0:0.2F} \n'.format(currentAccerlationInZDirection))
+
+
+          # Read the calibration status, 0 = uncalibrated and 3=fully calibrated.
+          time.sleep(2)
+
+    print("BNO055 fully calibrated.")
+
 def storeData(whatFile, source) : #FUNCTION USED TO STORE DATA TO A FILE
     if (source == "BNO055"):
         whatFile.write('{0},{1},{2:02F}\n'.format(source,times[0],accelerationFromBNO[0]))
@@ -40,12 +86,18 @@ def storeData(whatFile, source) : #FUNCTION USED TO STORE DATA TO A FILE
         whatFile.write('{0},{1},{2:02F}\n'.format(source,times[0],altitudes[0]))
         
 def collectData(): #FUNCTION USED TO COLLECT DATA
-    dataFileString = 'sensorData{}.dat'.format(datetime.datetime.now().strftime("%y_%m_%d_%H_%M"))
-    dataFile = open(dataFileString, "w")
+    JakeDataFileString = 'JakeSensorData{}.dat'.format(datetime.datetime.now().strftime("%y_%m_%d_%H_%M"))
+    JakeDataFile = open(JakeDataFileString, "w")
+    JakeDataFile.write("source,time,reading\n")
+
+    BenDataFileString = 'BenSensorData{}.dat'.format(datetime.datetime.now().strftime("%y_%m_%d_%H_%M"))
+    BenDataFile = open(BenDataFileString, "w")
+    BenDataFile.write("time,altitude,acceleration\n")
+
 
     tmpFile = open('tmpPlotCmd.gp', "w")
     print os.getcwd()
-    tmpFile.write('plot %s/%s"'%(os.getcwd(), dataFileString))
+    tmpFile.write('plot %s/%s"'%(os.getcwd(), JakeDataFileString))
     tmpFile.close()
 
     #Variable for counting the number of readings taken
@@ -55,11 +107,7 @@ def collectData(): #FUNCTION USED TO COLLECT DATA
         while True:
             # Read the Euler angles for heading, roll, pitch(all in degrees).
             heading, roll, pitch = bno.read_euler()
-            # Read the calibration status, 0 = uncalibrated and 3=fully calibrated.
-            sys, gyro, accel, mag = bno.get_calibration_status()
-            # Print everything out
-            print('Heading={0:0.2F} Roll={1:0.2F} Pitch{2:0.2F}\tSys_cal={3} Gyro_cal={4} Accel_cal={5} Mag_cal={6}'.format(
-                  heading, roll, pitch, sys, gyro, accel, mag))
+
             xa, ya, za = bno.read_linear_acceleration()
             xg, yg, zg = bno.read_gravity()
 
@@ -109,14 +157,15 @@ def collectData(): #FUNCTION USED TO COLLECT DATA
                 times.pop()
                 accelerationFromBNO.pop()
                 altitudes.pop()
-                storeData(dataFile,"BNO055")
-                storeData(dataFile,"BMP100")
-            
+                storeData(JakeDataFile,"BNO055")
+                storeData(JakeDataFile,"BMP100")
+                BenDataFile.write('{0},{1},{2:02F}\n'.format(times[0],altitudes[0],accelerationFromBNO[0]))
                         
-            time.sleep(.1)
+            time.sleep(.05)
 
     except KeyboardInterrupt: #Hit ctrl + c to end loop
-        dataFile.close()
+        JakeDataFile.close()
+        BenDataFile.close()
         
         system('gnuplot - persist tmpPlotCmd.gp')
         remove('tmpPlotCmd.gp')
@@ -183,19 +232,24 @@ check_bmp180
 
 #============= END BMP180 SETUP =================
 
-#=============== FILE SETUP =====================
-
-#=============== END FILE SETUP =================
 #=============== END SETUP =======================
 
 
 #===============MAIN PROGRAM=====================
 while True:
-    collectData()
-    sys.exit()
-    #TODO!!!!! YOU NEED TO WRITE TO TWO FILES.  ONE FOR BMP100 READINGS AND ONE FOR CURRENT ACCELERATION !!!!
-    #SEE VDS_Tronics_1_0.py AS A REFERENCE!!!
+    print("\n===============MAIN MENU===============")
+    user_ans = input("Select a number: \n 1) Calibrate BNO055 \n 2) Collect Data \n 3) Exit \n")
+    if user_ans == 1:
+        calibrateBNO()
+    elif user_ans == 2:
+        collectData()
+    elif user_ans == 3:
+        print("goodbye")
+        sys.exit()
+    else:
+        print("invalid input")
 
+        
     # Other values you can optionally read:
     # Orientation as a quarterion:
     #x,y,z,w = bno.read_quaterion()
