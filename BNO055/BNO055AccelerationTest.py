@@ -7,9 +7,8 @@ import datetime
 import sys
 from os import system, remove
 import os
-import Adafruit_BMP.BMP085 as BMP085
-#import Gnuplot #, Gnuplot.funcutils
 
+import Adafruit_BMP.BMP085 as BMP085
 from Adafruit_BNO055 import BNO055
 
 #Base point for altitude
@@ -38,44 +37,20 @@ def calibrateBNO():
 
     print("Calibrating BNO055...")
 
-    while(accel < 3):
-          xa, ya, za = bno.read_linear_acceleration()
-          xg, yg, zg = bno.read_gravity()
+    calibrationCount = 0
 
-          adotg = ((xa*xg)+(ya*yg)+(za*zg))
+    while(calibrationCount < 5):
+        sys, gyro, accel, mag = bno.get_calibration_status()
+
+        # Read the calibration status, 0 = uncalibrated and 3=fully calibrated.
+        print('Sys_cal={0} Gyro_cal={1} Accel_cal={2} Mag_cal={3}'.format(sys, gyro, accel, mag))
+
+        if accel > 2:
+            calibrationCount += 1
+        else:
+            calibrationCount = 0
             
-          #calulation to find the gradient of linear acceleration onto the acceleration of gravity
-          gradient = adotg/(((xg**2)+(yg**2)+(zg**2)))
-
-          #Calculations to find each component of acceleration using the gradient of linear accerlation onto the accerlation of gravity
-          xComponentOfAcceleration = gradient*xg
-          yComponentOfAcceleration = gradient*yg
-          zComponentOfAcceleration = gradient*zg
-
-          #Final calculation finding the magnitude of accerlation in the direction of gravity (e.g. the upwards
-          #linear accerlation regardless of orientation of the sensor.)
-          magnitudeOfAccelerationInZDirection = (((xComponentOfAcceleration**2)+(yComponentOfAcceleration**2)+(zComponentOfAcceleration**2))**0.5)
-
-          #Calculate theta using gradient -- cos(theta) = gradient
-          theta = math.acos(gradient)
-          #Convert theta into degrees
-          theta = (theta*180)/ math.pi
-
-          #test if theta is greater than 90 or and acceleration is negative, if it is assume magnitude of acceleration
-          #is negative
-          if theta > 90 and theta < 270:
-              currentAccerlationInZDirection = -1*magnitudeOfAccelerationInZDirection
-          else :
-              currentAccerlationInZDirection = magnitudeOfAccelerationInZDirection
-
-          print('Sys_cal={0} Gyro_cal={1} Accel_cal={2} Mag_cal={3}'.format(sys, gyro, accel, mag))
-          print('Current Linear Accelaration: x={0:0.2F} y={1:0.2F} z={2:0.2F}'.format(xa,ya,za))
-          print('Current Accelaration due to gravity: x={0:0.2F} y={1:0.2F} z={2:0.2F}'.format(xg,yg,zg))
-          print('Current accerlation in the Z Direction = {0:0.2F} \n'.format(currentAccerlationInZDirection))
-
-
-          # Read the calibration status, 0 = uncalibrated and 3=fully calibrated.
-          time.sleep(2)
+        time.sleep(1)
 
     print("BNO055 fully calibrated.")
 
@@ -90,85 +65,91 @@ def collectData(): #FUNCTION USED TO COLLECT DATA
     JakeDataFile = open(JakeDataFileString, "w")
     JakeDataFile.write("source,time,reading\n")
 
+    errorFileString = 'errorFile{}.dat'.format(datetime.datetime.now().strftime("%y_%m_%d_%H_%M"))
+    errorFile = open(errorFileString, "w")
+    errorFile.write("time, error\n")
+
     BenDataFileString = 'BenSensorData{}.dat'.format(datetime.datetime.now().strftime("%y_%m_%d_%H_%M"))
     BenDataFile = open(BenDataFileString, "w")
     BenDataFile.write("time,altitude,acceleration\n")
-
-
-    tmpFile = open('tmpPlotCmd.gp', "w")
-    print os.getcwd()
-    tmpFile.write('plot %s/%s"'%(os.getcwd(), JakeDataFileString))
-    tmpFile.close()
 
     #Variable for counting the number of readings taken
     loopCount = 0
 
     try:    
         while True:
-            # Read the Euler angles for heading, roll, pitch(all in degrees).
-            heading, roll, pitch = bno.read_euler()
+            sys, gyro, accel, mag = bno.get_calibration_status()
 
-            xa, ya, za = bno.read_linear_acceleration()
-            xg, yg, zg = bno.read_gravity()
+            if accel > 2:
+                # Read the Euler angles for heading, roll, pitch(all in degrees).
+                heading, roll, pitch = bno.read_euler()
 
-            print('Current Linear Accelaration: x={0:0.2F} y={1:0.2F} z={2:0.2F}'.format(xa,ya,za))
-            print('Current Accelaration due to gravity: x={0:0.2F} y={1:0.2F} z={2:0.2F}'.format(xg,yg,zg))
+                # Read the linear acceleration and acceleration of gravity vector components in m/(s^2)
+                xa, ya, za = bno.read_linear_acceleration()
+                xg, yg, zg = bno.read_gravity()
 
-            adotg = ((xa*xg)+(ya*yg)+(za*zg))
-            
-            #calulation to find the gradient of linear acceleration onto the acceleration of gravity
-            gradient = adotg/(((xg**2)+(yg**2)+(zg**2)))
+                print('Current Linear Accelaration: x={0:0.2F} y={1:0.2F} z={2:0.2F}'.format(xa,ya,za))
+                print('Current Accelaration due to gravity: x={0:0.2F} y={1:0.2F} z={2:0.2F}'.format(xg,yg,zg))
 
-            #Calculations to find each component of acceleration using the gradient of linear accerlation onto the accerlation of gravity
-            xComponentOfAcceleration = gradient*xg
-            yComponentOfAcceleration = gradient*yg
-            zComponentOfAcceleration = gradient*zg
+                adotg = ((xa*xg)+(ya*yg)+(za*zg))
+                
+                #calulation to find the gradient of linear acceleration onto the acceleration of gravity
+                gradient = adotg/(((xg**2)+(yg**2)+(zg**2)))
 
-            #Final calculation finding the magnitude of accerlation in the direction of gravity (e.g. the upwards
-            #linear accerlation regardless of orientation of the sensor.)
-            magnitudeOfAccelerationInZDirection = (((xComponentOfAcceleration**2)+(yComponentOfAcceleration**2)+(zComponentOfAcceleration**2))**0.5)
-            print('Current Acceleration in the Z direction (vector): x={0:0.2F} y={1:0.2F} z={2:0.2F}'.format(xComponentOfAcceleration,yComponentOfAcceleration,zComponentOfAcceleration))
-            print('Magnitude of acceleration in the Z Direction = {0:0.2F}'.format(magnitudeOfAccelerationInZDirection))
+                #Calculations to find each component of acceleration using the gradient of linear accerlation onto the accerlation of gravity
+                xComponentOfAcceleration = gradient*xg
+                yComponentOfAcceleration = gradient*yg
+                zComponentOfAcceleration = gradient*zg
 
-            #Calculate theta using gradient -- cos(theta) = gradient
-            print("The gradient equals {0}".format(gradient))
-            theta = math.acos(gradient)
-            #Convert theta into degrees
-            theta = (theta*180)/ math.pi
+                #Final calculation finding the magnitude of accerlation in the direction of gravity (e.g. the upwards
+                #linear accerlation regardless of orientation of the sensor.)
+                magnitudeOfAccelerationInZDirection = (((xComponentOfAcceleration**2)+(yComponentOfAcceleration**2)+(zComponentOfAcceleration**2))**0.5)
+                print('Current Acceleration in the Z direction (vector): x={0:0.2F} y={1:0.2F} z={2:0.2F}'.format(xComponentOfAcceleration,yComponentOfAcceleration,zComponentOfAcceleration))
+                print('Magnitude of acceleration in the Z Direction = {0:0.2F}'.format(magnitudeOfAccelerationInZDirection))
 
-            #test if theta is greater than 90 or and acceleration is negative, if it is assume magnitude of acceleration
-            #is negative
-            if theta > 90 and theta < 270:
-                currentAccerlationInZDirection = -1*magnitudeOfAccelerationInZDirection
-            else :
-                currentAccerlationInZDirection = magnitudeOfAccelerationInZDirection
+                #Calculate theta using gradient -- cos(theta) = gradient
+                print("The gradient equals {0}".format(gradient))
+                theta = math.acos(gradient)
+                #Convert theta into degrees from radians
+                theta = (theta*180)/ math.pi
 
-            print('Current accerlation in the Z Direction = {0:0.2F} \n\n'.format(currentAccerlationInZDirection))
+                #test if theta is greater than 90 or and acceleration is negative, if it is assume magnitude of acceleration
+                #is negative
+                if theta > 90 and theta < 270:
+                    currentAccerlationInZDirection = magnitudeOfAccelerationInZDirection
+                else :
+                    currentAccerlationInZDirection = -1*magnitudeOfAccelerationInZDirection
 
-            #UPDATE TIME AND ACCELERATION LISTS
-            times.insert(0,int(round(time.time() * 1000)) - programStartTime)
-            accelerationFromBNO.insert(0, currentAccerlationInZDirection)
-            altitudes.insert(0, bmp180.read_altitude() - pad_alt)
+                print('Current accerlation in the Z Direction = {0:0.2F} \n\n'.format(currentAccerlationInZDirection))
+
+                #UPDATE TIME AND ACCELERATION LISTS
+                times.insert(0,int(round(time.time() * 1000)) - programStartTime)
+                accelerationFromBNO.insert(0, currentAccerlationInZDirection)
+                altitudes.insert(0, bmp180.read_altitude() - pad_alt)
 
 
-            if loopCount < (NUM_OF_READINGS+1): #If not enough readings, do nothing
-                loopCount += 1
-            else: #If NUM_OF_READINGS has been met, kick oldest reading out
-                times.pop()
-                accelerationFromBNO.pop()
-                altitudes.pop()
-                storeData(JakeDataFile,"BNO055")
-                storeData(JakeDataFile,"BMP100")
-                BenDataFile.write('{0},{1},{2:02F}\n'.format(times[0],altitudes[0],accelerationFromBNO[0]))
-                        
+                if loopCount < (NUM_OF_READINGS+1): #If not enough readings, do nothing
+                    loopCount += 1
+                else: #If NUM_OF_READINGS has been met, kick oldest reading out
+                    times.pop()
+                    accelerationFromBNO.pop()
+                    altitudes.pop()
+                    storeData(JakeDataFile,"BNO055")
+                    storeData(JakeDataFile,"BMP100")
+                    BenDataFile.write('{0},{1},{2:02F}\n'.format(times[0],altitudes[0],accelerationFromBNO[0]))
+            else:
+                times.insert(0,int(round(time.time() * 1000)) - programStartTime)
+                if loopCount < (NUM_OF_READINGS+1): #If not enough readings, do nothing
+                    loopCount += 1
+                else: #If NUM_OF_READINGS has been met, kick oldest reading out
+                    times.pop()
+                    errorFile.write("{0},BNO055's Accelerometer is not calibrated.".format(times[0]))
             time.sleep(.05)
 
     except KeyboardInterrupt: #Hit ctrl + c to end loop
         JakeDataFile.close()
         BenDataFile.close()
-        
-        system('gnuplot - persist tmpPlotCmd.gp')
-        remove('tmpPlotCmd.gp')
+        errorFile.close()
         pass
 #=============== END FUNCTIONS ==================
 
@@ -211,15 +192,23 @@ if len(sys.argv) == 2 and sys.argv[1].lower() == '-v':
 if not bno.begin():
     raise RuntimeError('Failed to initialize BNO05! Is the sensor connected?')
 
-#Print system status and self test result.
+# Print system status and self test result.
 status, self_test, error = bno.get_system_status()
 print('System status: {0}'.format(status))
 print('Self test result (0x0F is normal): 0x{0:02X}'.format(self_test))
 
-#print out an error if system status is in error mode.
+# Print out an error if system status is in error mode.
 if status == 0x01:
     print('System error: {0}'.format(error))
     print('See datasheet section 4.3.59 for the meaning.')
+
+# Print BNO055 software revision and other diagnostic data.
+sw, bl, accel, mag, gyro = bno.get_revision()
+print('Software version:   {0}'.format(sw))
+print('Bootloader version: {0}'.format(bl))
+print('Accelerometer ID:   0x{0:02X}'.format(accel))
+print('Magnetometer ID:    0x{0:02X}'.format(mag))
+print('Gyroscope ID:       0x{0:02X}\n'.format(gyro))
 #=============== END BNO055 SETUP ===============
 
 #=============== BMP180 SETUP ===================
@@ -231,7 +220,6 @@ pad_alt = zero_bmp180()
 check_bmp180
 
 #============= END BMP180 SETUP =================
-
 #=============== END SETUP =======================
 
 
@@ -268,3 +256,4 @@ while True:
     # in meters per second squared):
     #x,y,z = bno.read_gravity()
     # Sleep for a second until the next reading.time.sleep(1)
+
