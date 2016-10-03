@@ -56,11 +56,17 @@ def calibrateBNO():
 
 def storeData(whatFile, source) : #FUNCTION USED TO STORE DATA TO A FILE
     if (source == "BNO055"):
-        whatFile.write('{0},{1},{2:02F}\n'.format(source,times[0],accelerationFromBNO[0]))
+        whatFile.write('{0},{1},{2:0.3F}\n'.format(source,times[0],accelerationFromBNO[0]))
     else:
-        whatFile.write('{0},{1},{2:02F}\n'.format(source,times[0],altitudes[0]))
+        whatFile.write('{0},{1},{2:0.3F}\n'.format(source,times[0],altitudes[0]))
         
 def collectData(): #FUNCTION USED TO COLLECT DATA
+
+    #===============Collect Data Setup===============    
+    #Zero the time
+    programStartTime = int(round(time.time()*1000))
+
+
     JakeDataFileString = 'JakeSensorData{}.dat'.format(datetime.datetime.now().strftime("%y_%m_%d_%H_%M"))
     JakeDataFile = open(JakeDataFileString, "w")
     JakeDataFile.write("source,time,reading\n")
@@ -75,6 +81,7 @@ def collectData(): #FUNCTION USED TO COLLECT DATA
 
     #Variable for counting the number of readings taken
     loopCount = 0
+    #=============End Collect Data Setup=============
 
     try:    
         while True:
@@ -88,28 +95,34 @@ def collectData(): #FUNCTION USED TO COLLECT DATA
                 xa, ya, za = bno.read_linear_acceleration()
                 xg, yg, zg = bno.read_gravity()
 
+                #Find magnitudes of linear acceleration and gravity
+                magnitudeOfLAccel = ((xa**2)+(ya**2)+(za**2))**.5
+                magnitudeOfGrav = ((xg**2)+(yg**2)+(zg**2))**.5
+
                 print('Current Linear Accelaration: x={0:0.2F} y={1:0.2F} z={2:0.2F}'.format(xa,ya,za))
                 print('Current Accelaration due to gravity: x={0:0.2F} y={1:0.2F} z={2:0.2F}'.format(xg,yg,zg))
 
+                #Calculate the dot product of linear acceleration and gravity
                 adotg = ((xa*xg)+(ya*yg)+(za*zg))
                 
-                #calulation to find the gradient of linear acceleration onto the acceleration of gravity
-                gradient = adotg/(((xg**2)+(yg**2)+(zg**2)))
+                #calulation to find the component of linear acceleration in the direction of gravity
+                componentOfAinG = adotg/(((xg**2)+(yg**2)+(zg**2)))
 
                 #Calculations to find each component of acceleration using the gradient of linear accerlation onto the accerlation of gravity
-                xComponentOfAcceleration = gradient*xg
-                yComponentOfAcceleration = gradient*yg
-                zComponentOfAcceleration = gradient*zg
+                xComponentOfAcceleration = componentOfAinG*xg
+                yComponentOfAcceleration = componentOfAinG*yg
+                zComponentOfAcceleration = componentOfAinG*zg
 
                 #Final calculation finding the magnitude of accerlation in the direction of gravity (e.g. the upwards
                 #linear accerlation regardless of orientation of the sensor.)
-                magnitudeOfAccelerationInZDirection = (((xComponentOfAcceleration**2)+(yComponentOfAcceleration**2)+(zComponentOfAcceleration**2))**0.5)
+                magnitudeOfAccelerationInZDirection = (((xComponentOfAcceleration**2)+(yComponentOfAcceleration**2)+(zComponentOfAcceleration**2)))
                 print('Current Acceleration in the Z direction (vector): x={0:0.2F} y={1:0.2F} z={2:0.2F}'.format(xComponentOfAcceleration,yComponentOfAcceleration,zComponentOfAcceleration))
                 print('Magnitude of acceleration in the Z Direction = {0:0.2F}'.format(magnitudeOfAccelerationInZDirection))
 
-                #Calculate theta using gradient -- cos(theta) = gradient
-                print("The gradient equals {0}".format(gradient))
-                theta = math.acos(gradient)
+                #Calculate theta using definition of dot product -- cos(theta) = the dot product of LA and G over their magnitudes
+                defOfDotProduct = adotg / (magnitudeOfLAccel*magnitudeOfGrav)
+                print("The definition of dot product give us cos(theta) = {0}".format(defOfDotProduct))
+                theta = math.acos(defOfDotProduct)
                 #Convert theta into degrees from radians
                 theta = (theta*180)/ math.pi
 
@@ -120,7 +133,7 @@ def collectData(): #FUNCTION USED TO COLLECT DATA
                 else :
                     currentAccerlationInZDirection = -1*magnitudeOfAccelerationInZDirection
 
-                print('Current accerlation in the Z Direction = {0:0.2F} \n\n'.format(currentAccerlationInZDirection))
+                print('Current accerlation in the Z Direction = {0:0.3F} \n\n'.format(currentAccerlationInZDirection))
 
                 #UPDATE TIME AND ACCELERATION LISTS
                 times.insert(0,int(round(time.time() * 1000)) - programStartTime)
@@ -136,7 +149,7 @@ def collectData(): #FUNCTION USED TO COLLECT DATA
                     altitudes.pop()
                     storeData(JakeDataFile,"BNO055")
                     storeData(JakeDataFile,"BMP100")
-                    BenDataFile.write('{0},{1},{2:02F}\n'.format(times[0],altitudes[0],accelerationFromBNO[0]))
+                    BenDataFile.write('{0},{1},{2:0.3F}\n'.format(times[0],altitudes[0],accelerationFromBNO[0]))
             else:
                 times.insert(0,int(round(time.time() * 1000)) - programStartTime)
                 if loopCount < (NUM_OF_READINGS+1): #If not enough readings, do nothing
@@ -160,9 +173,6 @@ def collectData(): #FUNCTION USED TO COLLECT DATA
 #=============== VARIABLE SETUP =================
 #Number of readings stored in each vector
 NUM_OF_READINGS = 9
-
-#Zero the time
-programStartTime = int(round(time.time()*1000))
 
 #Create list for acceleration readings
 accelerationFromBNO = [None] * NUM_OF_READINGS
@@ -256,4 +266,3 @@ while True:
     # in meters per second squared):
     #x,y,z = bno.read_gravity()
     # Sleep for a second until the next reading.time.sleep(1)
-
