@@ -15,6 +15,7 @@ from Adafruit_BNO055 import BNO055
 pad_alt=0
 
 #=============== FUNCTIONS ======================
+    #=========== BEGIN BMP SPECIFIC FUNCTIONS====
 def zero_bmp180():
     pad = bmp180.read_altitude()
     pad += bmp180.read_altitude()
@@ -31,7 +32,22 @@ def check_bmp180():
     print("Altitude (ASL) = {0:0.2F} m".format(bmp180.read_altitude()))
     print("Altitude (AGL) = {0:0.2F} m".format(bmp180.read_altitude()-pad_alt))
     print("Sealevel Pressure = {0:0.2F} Pa \n".format(bmp180.read_sealevel_pressure()))
+    #============ END BMP SPECIFIC FUNCTIONS=====
+    
+    #=========== BEGIN BNO SPECIFIC FUNCTIONS====
+def set2GRange(self):  #BNO055 Function used to set precision of Accelerometer
+    BNO055_ACC_CONFIG_ADDR = 0X08
+        
+    #switch to config mode
+    self._config_mode()
 
+    #Set acceleration sensitivity to G2
+    self._write_byte(BNO055_ACC_CONFIG_ADDR,0X0C)
+
+    #switch back to operation mode
+    self._operation_mode()
+    print("BNO acceleration configured to 2G")
+    
 def calibrateBNO():
     sys, gyro, accel, mag = bno.get_calibration_status()
 
@@ -52,20 +68,82 @@ def calibrateBNO():
             
         time.sleep(1)
 
-    print("BNO055 fully calibrated.")
+    print("BNO055 fully calibrated, calibration file has been updated.")
+    calibrationFile = open("CalibrationFile.dat","w")
+    for item in bno.get_calibration():
+        calibrationFile.write("{},".format(str(item)))
 
+def getInts(text):
+    integer = 0
+    count = 0
+    output = list()
+    for i in range(0,len(text),1):
+        if(text[i] == ','):
+            count = 0
+            output.insert(0,integer)
+        else:
+            if(count == 0):
+                integer = int(text[i])
+                count += 1
+            else:
+                integer *= 10
+                integer += int(text[i])
+    return output
+
+def setCalibration():  ##TO DO!! FIX THIS FUNCTION
+    print("Calibrating BNO055 using CalibrationFile.dat")
+    fileData = open("CalibrationFile.dat")
+    inputLine = fileData.readline()
+    calibrationData = list()
+
+    calibrationData = getInts(inputLine)
+
+    bno.set_calibration(calibrationData)        
+
+    sys, gyro, accel, mag = bno.get_calibration_status()
+
+    # Read the calibration status, 0 = uncalibrated and 3=fully calibrated.
+    print('Sys_cal={0} Gyro_cal={1} Accel_cal={2} Mag_cal={3}'.format(sys, gyro, accel, mag))
+    
+    #============ END BNO SPECIFIC FUNCTIONS=====
+
+    #========= BEGIN GENERAL FUNCTIONS ==========
 def storeData(whatFile, source) : #FUNCTION USED TO STORE DATA TO A FILE
     if (source == "BNO055"):
-        whatFile.write('{0},{1},{2:0.3F}\n'.format(source,times[0],accelerationFromBNO[0]))
+        whatFile.write('{0},{1},{2:0.3F}\n'.format(source,BNOTimes[0],accelerationFromBNO[0]))
     else:
-        whatFile.write('{0},{1},{2:0.3F}\n'.format(source,times[0],altitudes[0]))
-        
+        whatFile.write('{0},{1},{2:0.3F}\n'.format(source,BNOTimes[0],altitudes[0]))
+
+def calulateVelocity():
+    #Variables needed for caluation
+    sumBMPTimes = 0
+    sumBMPTimes2 = 0
+    sumAlt = 0
+    sumAltTimes = 0
+    leftSide = 0
+    rightSide = 0
+    
+    #Find sums for BMP
+    for i in range(0, NUM_ALT_READINGS):
+        sumBMPTimes += BMPTimes[i]
+        sumBMPTimes2 += (BMPTimes[i]**2)
+        sumAlt += altitudes[i]
+        sumAltTimes += (altitudes[i] * BMPTimes[i])        
+
+    #Calulate left side of equation
+    leftSide =  ((sumBMPTimes * sumAlt) - (NUM_ALT_READINGS * sumAltTimes)) / (((sumBMPTimes)**2) - (NUM_ALT_READINGS* sumBMPTimes2))
+
+    #Calculate rightSide of equation
+    for i in range((NUM_ACCEL_READINGS/2),(NUM_ACCEL_READINGS-1),1):
+        rightSide += (.5*(accelerationFromBNO[i] + accelerationFromBNO[i+1])*(BNOTimes[i+1]-BNOTimes[i]))
+
+    return (leftSide + rightSide)
+
 def collectData(): #FUNCTION USED TO COLLECT DATA
 
     #===============Collect Data Setup===============    
     #Zero the time
     programStartTime = int(round(time.time()*1000))
-
 
     JakeDataFileString = 'JakeSensorData{}.dat'.format(datetime.datetime.now().strftime("%y_%m_%d_%H_%M"))
     JakeDataFile = open(JakeDataFileString, "w")
@@ -133,55 +211,61 @@ def collectData(): #FUNCTION USED TO COLLECT DATA
                 else :
                     currentAccerlationInZDirection = -1*magnitudeOfAccelerationInZDirection
 
+                print('Heading={0:0.2F} Roll={1:0.2F} Pitch={2:0.2F}'.format(heading, roll, pitch))
+                print("Theta: {0:0.2F}".format(theta))
                 print('Current accerlation in the Z Direction = {0:0.3F} \n\n'.format(currentAccerlationInZDirection))
 
                 #UPDATE TIME AND ACCELERATION LISTS
-                times.insert(0,int(round(time.time() * 1000)) - programStartTime)
+                BNOTimes.insert(0,int(round(time.time() * 1000)) - programStartTime)
                 accelerationFromBNO.insert(0, currentAccerlationInZDirection)
                 altitudes.insert(0, bmp180.read_altitude() - pad_alt)
 
 
-                if loopCount < (NUM_OF_READINGS+1): #If not enough readings, do nothing
+                if (loopCount < (NUM_ACCEL_READINGS+1)) or (loopCount < (NUM_ALT_READINGS+1)): #If not enough readings, do nothing
                     loopCount += 1
                 else: #If NUM_OF_READINGS has been met, kick oldest reading out
-                    times.pop()
+                    BNOTimes.pop()
                     accelerationFromBNO.pop()
                     altitudes.pop()
                     storeData(JakeDataFile,"BNO055")
                     storeData(JakeDataFile,"BMP100")
-                    BenDataFile.write('{0},{1},{2:0.3F}\n'.format(times[0],altitudes[0],accelerationFromBNO[0]))
+                    BenDataFile.write('{0},{1},{2:0.3F}\n'.format(BNOTimes[0],altitudes[0],accelerationFromBNO[0]))
             else:
-                times.insert(0,int(round(time.time() * 1000)) - programStartTime)
+                BNOTimes.insert(0,int(round(time.time() * 1000)) - programStartTime)
+                print("{0},BNO055's Accelerometer is not calibrated.".format(BNOTimes[0]))
+                
                 if loopCount < (NUM_OF_READINGS+1): #If not enough readings, do nothing
                     loopCount += 1
                 else: #If NUM_OF_READINGS has been met, kick oldest reading out
-                    times.pop()
-                    errorFile.write("{0},BNO055's Accelerometer is not calibrated.".format(times[0]))
-            time.sleep(.05)
+                    BNOTimes.pop()
+                    errorFile.write("{0},BNO055's Accelerometer is not calibrated.".format(BNOTimes[0]))
 
     except KeyboardInterrupt: #Hit ctrl + c to end loop
         JakeDataFile.close()
         BenDataFile.close()
         errorFile.close()
         pass
-#=============== END FUNCTIONS ==================
-
-
+    #========== END GENERAL FUNCTIONS ===========
 
 
 #=============== SETUP ===========================
 #=============== VARIABLE SETUP =================
 #Number of readings stored in each vector
-NUM_OF_READINGS = 9
+NUM_ACCEL_READINGS = 14
+NUM_ALT_READINGS = 14
+
 
 #Create list for acceleration readings
-accelerationFromBNO = [None] * NUM_OF_READINGS
+accelerationFromBNO = range(0,NUM_ACCEL_READINGS)
+
+#Create list for BNO055 times
+BNOTimes = range(0,NUM_ACCEL_READINGS)
 
 #Create list for altitude readings
-altitudes = [None] * NUM_OF_READINGS
+altitudes = range(0,NUM_ALT_READINGS)
 
-#Create list for times
-times = [None] * NUM_OF_READINGS
+#Create list for BMP180 times
+BMPTimes = range(0,NUM_ALT_READINGS)
 
 #=============== END VARIABLE SETUP =============
 
@@ -201,6 +285,9 @@ if len(sys.argv) == 2 and sys.argv[1].lower() == '-v':
 # Initialize the BNO055 and stop if something went wrong.
 if not bno.begin():
     raise RuntimeError('Failed to initialize BNO05! Is the sensor connected?')
+
+#Set BNO055's Acceleration range to +/2G
+set2GRange(bno)
 
 # Print system status and self test result.
 status, self_test, error = bno.get_system_status()
@@ -236,17 +323,19 @@ check_bmp180
 #===============MAIN PROGRAM=====================
 while True:
     print("\n===============MAIN MENU===============")
-    user_ans = input("Select a number: \n 1) Calibrate BNO055 \n 2) Collect Data \n 3) Exit \n")
+    user_ans = input("Select a number: \n 1) Calibrate BNO055 manually \n 2) Calibrate BNO055 from file \n 3) Collect Data \n 4) Exit \n")
     if user_ans == 1:
         calibrateBNO()
     elif user_ans == 2:
-        collectData()
+        setCalibration()
     elif user_ans == 3:
+        print("\nCollecting data...")
+        collectData()
+    elif user_ans == 4:
         print("goodbye")
         sys.exit()
     else:
         print("invalid input")
-
         
     # Other values you can optionally read:
     # Orientation as a quarterion:
