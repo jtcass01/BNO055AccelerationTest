@@ -1,2 +1,2 @@
 # Raspberry-Pi
-Programs relating to Raspberry Pi 3 used for River City Rocketry's rocket
+Unit test for BNO055's acceleration values.  We used data from our barometric pressure sensor to validate our vector math and other program functions.
